@@ -205,6 +205,7 @@ typedef void (*i2c_callback_t)(const struct device *dev, int result, void *data)
  */
 struct i2c_target_config;
 
+typedef int (*i2c_api_update_ext_power_t)(const struct device *dev, bool enabled);
 typedef int (*i2c_api_configure_t)(const struct device *dev,
 				   uint32_t dev_config);
 typedef int (*i2c_api_get_config_t)(const struct device *dev,
@@ -228,6 +229,7 @@ typedef int (*i2c_api_transfer_cb_t)(const struct device *dev,
 typedef int (*i2c_api_recover_bus_t)(const struct device *dev);
 
 __subsystem struct i2c_driver_api {
+	i2c_api_update_ext_power_t update_ext_power;
 	i2c_api_configure_t configure;
 	i2c_api_get_config_t get_config;
 	i2c_api_full_io_t transfer;
@@ -238,6 +240,18 @@ __subsystem struct i2c_driver_api {
 #endif
 	i2c_api_recover_bus_t recover_bus;
 };
+
+static inline int i2c_update_ext_power(const struct device *dev, bool enabled)
+{
+	const struct i2c_driver_api *api =
+		(const struct i2c_driver_api *)dev->api;
+
+	if (api->update_ext_power == NULL) {
+		return -ENOTSUP;
+	}
+
+	return api->update_ext_power(dev, enabled);
+}
 
 typedef int (*i2c_target_api_register_t)(const struct device *dev);
 typedef int (*i2c_target_api_unregister_t)(const struct device *dev);

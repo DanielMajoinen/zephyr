@@ -212,11 +212,7 @@ static int i2c_nrfx_twi_recover_bus(const struct device *dev)
 	return (err == NRFX_SUCCESS ? 0 : -EBUSY);
 }
 
-static const struct i2c_driver_api i2c_nrfx_twi_driver_api = {
-	.configure   = i2c_nrfx_twi_configure,
-	.transfer    = i2c_nrfx_twi_transfer,
-	.recover_bus = i2c_nrfx_twi_recover_bus,
-};
+static int initialized = false;
 
 static int init_twi(const struct device *dev)
 {
@@ -230,8 +226,33 @@ static int init_twi(const struct device *dev)
 		return -EBUSY;
 	}
 
+	initialized = true;
 	return 0;
 }
+
+static int i2c_nrfx_twi_update_ext_power(const struct device *dev, bool ext_power_enabled) {
+	LOG_WRN("I2C update_ext_power now");
+	if(ext_power_enabled) {
+		LOG_WRN("New state power on, re-init");
+		if (!initialized) {
+			const struct i2c_nrfx_twi_config *config = dev->config;
+			nrfx_twi_uninit(&config->twi);
+			init_twi(dev);
+		}
+	} else {
+		if (initialized) {
+			initialized = false;
+		}
+	}
+	return 0;
+}
+
+static const struct i2c_driver_api i2c_nrfx_twi_driver_api = {
+	.update_ext_power = i2c_nrfx_twi_update_ext_power,
+	.configure   = i2c_nrfx_twi_configure,
+	.transfer    = i2c_nrfx_twi_transfer,
+	.recover_bus = i2c_nrfx_twi_recover_bus,
+};
 
 #ifdef CONFIG_PM_DEVICE
 static int twi_nrfx_pm_action(const struct device *dev,
@@ -243,29 +264,20 @@ static int twi_nrfx_pm_action(const struct device *dev,
 
 	switch (action) {
 	case PM_DEVICE_ACTION_RESUME:
-#ifdef CONFIG_PINCTRL
-		ret = pinctrl_apply_state(config->pcfg,
-					  PINCTRL_STATE_DEFAULT);
-		if (ret < 0) {
-			return ret;
-		}
-#endif
-		init_twi(dev);
-		if (data->dev_config) {
-			i2c_nrfx_twi_configure(dev, data->dev_config);
+		if (!initialized) {
+			init_twi(dev);
+			if (data->dev_config) {
+				i2c_nrfx_twi_configure(dev, data->dev_config);
+			}
 		}
 		break;
 
 	case PM_DEVICE_ACTION_SUSPEND:
-		nrfx_twi_uninit(&config->twi);
-
-#ifdef CONFIG_PINCTRL
-		ret = pinctrl_apply_state(config->pcfg,
-					  PINCTRL_STATE_SLEEP);
-		if (ret < 0) {
-			return ret;
+		LOG_WRN("DEVICE_PM_OFF_STATE DEVICE_PM_SUSPEND_STATE DEVICE_PM_LOW_POWER_STATE");
+		if (initialized) {
+			nrfx_twi_uninit(&config->twi);
+			initialized = false;
 		}
-#endif
 		break;
 
 	default:
